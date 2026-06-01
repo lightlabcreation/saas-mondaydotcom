@@ -1,0 +1,15 @@
+node_modules/
+.env
+uploads/
+*.log
+*.sql
+clearDb.js
+dumpDb.js
+dropFks.js
+testDb.js
+testPerms.js
+testUserFind.js
+test-login-recaptcha.js
+test-superadmin.js
+dbDump.txt
+dbDump_utf8.txt
