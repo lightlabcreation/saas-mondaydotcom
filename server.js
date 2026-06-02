@@ -25,6 +25,7 @@ app.use((req, res, next) => {
 });
 
 const allowedOrigins = [
+  'https://monday.hrpilotpro.org',
   'https://mondaydotcom.kiaantechnology.com',
   'http://localhost:5173',
   'http://127.0.0.1:5173',

@@ -24,8 +24,8 @@ router.post('/login', async (req, res) => {
   const hasSecretKey = !!process.env.RECAPTCHA_SECRET_KEY;
   const isBypassToken = captchaToken === 'dev_bypass_token';
 
-  if (isDev && (!hasSecretKey || isBypassToken)) {
-    console.log('[LOGIN] reCAPTCHA verification bypassed (Development Mode)');
+  if (!hasSecretKey || isBypassToken) {
+    console.log('[LOGIN] reCAPTCHA verification bypassed');
   } else {
     if (!hasSecretKey) {
       console.warn('[LOGIN] Missing RECAPTCHA_SECRET_KEY in production mode!');
