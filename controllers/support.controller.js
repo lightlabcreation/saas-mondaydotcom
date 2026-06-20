@@ -103,3 +103,196 @@ exports.syncTicketFromSuperadmin = async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error while syncing ticket' });
   }
 };
+
+// Get tickets for logged-in user
+exports.getMyTickets = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const [tickets] = await sequelize.query(
+      'SELECT * FROM support_tickets WHERE user_id = ? ORDER BY created_at DESC',
+      { replacements: [userId] }
+    );
+    res.json({ success: true, tickets });
+  } catch (error) {
+    console.error('Get my tickets error:', error);
+    res.status(500).json({ success: false, message: 'Server error fetching tickets' });
+  }
+};
+
+// Get all tickets for a company
+exports.getCompanyTickets = async (req, res) => {
+  try {
+    const companyId = req.user.companyId;
+    const [tickets] = await sequelize.query(
+      'SELECT * FROM support_tickets WHERE company_id = ? ORDER BY created_at DESC',
+      { replacements: [companyId] }
+    );
+    res.json({ success: true, tickets });
+  } catch (error) {
+    console.error('Get company tickets error:', error);
+    res.status(500).json({ success: false, message: 'Server error fetching company tickets' });
+  }
+};
+
+// Get ticket details and messages
+exports.getTicketDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const [messages] = await sequelize.query(
+      'SELECT * FROM ticket_messages WHERE ticket_id = ? ORDER BY created_at ASC',
+      { replacements: [id] }
+    );
+    res.json({ success: true, messages });
+  } catch (error) {
+    console.error('Get ticket details error:', error);
+    res.status(500).json({ success: false, message: 'Server error fetching ticket details' });
+  }
+};
+
+// Create a ticket for logged-in user
+exports.createTicket = async (req, res) => {
+  try {
+    const { subject, category, priority, description } = req.body;
+    const userId = req.user.id;
+    const companyId = req.user.companyId || 0;
+    const companyName = req.user.companyName || 'Unknown Company';
+    
+    // Generate unique ticket number
+    const ticketNumber = `TKT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+    const sql = `
+      INSERT INTO support_tickets (ticket_number, company_id, company_name, project_name, user_id, subject, category, priority, description, status, created_at, updated_at)
+      VALUES (?, ?, ?, 'monday.com SaaS', ?, ?, ?, ?, ?, 'Open', NOW(), NOW())
+    `;
+    
+    const [result] = await sequelize.query(sql, {
+      replacements: [ticketNumber, companyId, companyName, userId, subject, category, priority || 'Medium', description]
+    });
+    
+    const newTicketId = result;
+
+    // Sync to Super Admin
+    try {
+      const payload = {
+        ticketNumber,
+        companyId,
+        companyName,
+        userId,
+        subject,
+        category,
+        priority: priority || 'Medium',
+        description,
+        projectName: "monday.com SaaS"
+      };
+
+      fetch(`${process.env.SUPERADMIN_API_URL}/support/create-ticket`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-api-key': process.env.INTERNAL_API_KEY
+        },
+        body: JSON.stringify(payload)
+      }).catch(err => console.error('Error syncing ticket to Super Admin (async):', err));
+    } catch (syncErr) {
+      console.error('Error initiating sync ticket to Super Admin:', syncErr);
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Ticket created successfully',
+      ticket: { id: newTicketId, ticketNumber }
+    });
+  } catch (error) {
+    console.error('Create ticket error:', error);
+    res.status(500).json({ success: false, message: 'Server error while creating ticket' });
+  }
+};
+
+// Reply to a ticket
+exports.replyToTicket = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message } = req.body;
+    const userId = req.user.id;
+
+    // Insert user reply
+    await sequelize.query(
+      'INSERT INTO ticket_messages (ticket_id, sender_type, sender_id, message, created_at) VALUES (?, "client", ?, ?, NOW())',
+      { replacements: [id, userId, message] }
+    );
+    
+    // Set status to Open (since client replied)
+    await sequelize.query(
+      'UPDATE support_tickets SET status = "Open", updated_at = NOW() WHERE id = ?',
+      { replacements: [id] }
+    );
+
+    // Fetch ticket number to sync
+    const [tickets] = await sequelize.query('SELECT ticket_number FROM support_tickets WHERE id = ?', {
+      replacements: [id]
+    });
+
+    if (tickets && tickets.length > 0) {
+      const ticketNumber = tickets[0].ticket_number;
+      // Sync to Superadmin
+      fetch(`${process.env.SUPERADMIN_API_URL}/support/sync-ticket`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-api-key': process.env.INTERNAL_API_KEY
+        },
+        body: JSON.stringify({
+          action: 'reply',
+          ticketNumber,
+          reply: message,
+          senderType: 'client'
+        })
+      }).catch(err => console.error('Error syncing reply to Super Admin:', err));
+    }
+
+    res.json({ success: true, message: 'Reply sent successfully' });
+  } catch (error) {
+    console.error('Reply to ticket error:', error);
+    res.status(500).json({ success: false, message: 'Server error sending reply' });
+  }
+};
+
+// Update ticket status
+exports.updateTicketStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    await sequelize.query(
+      'UPDATE support_tickets SET status = ?, updated_at = NOW() WHERE id = ?',
+      { replacements: [status, id] }
+    );
+
+    // Fetch ticket number to sync
+    const [tickets] = await sequelize.query('SELECT ticket_number FROM support_tickets WHERE id = ?', {
+      replacements: [id]
+    });
+
+    if (tickets && tickets.length > 0) {
+      const ticketNumber = tickets[0].ticket_number;
+      // Sync to Superadmin
+      fetch(`${process.env.SUPERADMIN_API_URL}/support/sync-ticket`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-internal-api-key': process.env.INTERNAL_API_KEY
+        },
+        body: JSON.stringify({
+          action: 'status',
+          ticketNumber,
+          status
+        })
+      }).catch(err => console.error('Error syncing status to Super Admin:', err));
+    }
+
+    res.json({ success: true, message: 'Status updated successfully' });
+  } catch (error) {
+    console.error('Update status error:', error);
+    res.status(500).json({ success: false, message: 'Server error updating status' });
+  }
+};
