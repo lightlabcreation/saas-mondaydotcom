@@ -19,37 +19,6 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ msg: 'Please provide both email and password' });
   }
 
-  // Google reCAPTCHA Verification
-  const isDev = process.env.NODE_ENV === 'development';
-  const hasSecretKey = !!process.env.RECAPTCHA_SECRET_KEY;
-  const isBypassToken = captchaToken === 'dev_bypass_token';
-
-  if (!hasSecretKey || isBypassToken) {
-    console.log('[LOGIN] reCAPTCHA verification bypassed');
-  } else {
-    if (!hasSecretKey) {
-      console.warn('[LOGIN] Missing RECAPTCHA_SECRET_KEY in production mode!');
-      return res.status(500).json({ msg: 'Server configuration error: missing reCAPTCHA secret key.' });
-    }
-    if (!captchaToken || isBypassToken) {
-      console.warn('[LOGIN] Blocked invalid/bypass token in verification mode:', captchaToken);
-      return res.status(400).json({ msg: 'Please verify that you are not a robot.' });
-    }
-    try {
-      const axios = require('axios');
-      const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${process.env.RECAPTCHA_SECRET_KEY}&response=${captchaToken}`;
-      const captchaRes = await axios.post(verifyUrl);
-      if (!captchaRes.data || !captchaRes.data.success) {
-        console.warn('[LOGIN] reCAPTCHA verification failed:', captchaRes.data);
-        return res.status(400).json({ msg: 'reCAPTCHA verification failed. Please try again.' });
-      }
-      console.log('[LOGIN] reCAPTCHA validation successful');
-    } catch (captchaErr) {
-      console.error('[LOGIN] reCAPTCHA API request error:', captchaErr.message);
-      return res.status(500).json({ msg: 'Server error during reCAPTCHA verification' });
-    }
-  }
-
   try {
     const { Role } = require('../models');
     let user = await User.findOne({

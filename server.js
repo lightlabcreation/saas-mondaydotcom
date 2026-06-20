@@ -79,6 +79,7 @@ app.use('/api/payroll', require('./routes/payroll'));
 app.use('/api/ai-projects', require('./routes/aiProjects'));
 app.use('/api/backups', require('./routes/backups'));
 app.use('/api/chat', require('./routes/chat'));
+app.use('/api/support', require('./routes/support.routes'));
 app.use('/api/internal', require('./routes/internal.routes'));
 
 // --- SOCKET.IO LOGIC ---
